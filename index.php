@@ -1,10 +1,6 @@
 <?php
 
-/*
- * Copyright (C) 2002-2013 AfterLogic Corp. (www.afterlogic.com)
- * Distributed under the terms of the license described in LICENSE
- *
- */
+/* -AFTERLOGIC LICENSE HEADER- */
 
 class_exists('CApi') or die();
 
@@ -23,6 +19,7 @@ if (!class_exists('Google_Client'))
 class CFilestorageGoogleDrivePlugin extends AApiPlugin
 {
 	const StorageType = 3;
+	const StorageTypeStr = 'google';
 	const DisplayName = 'Google Drive';
 
 	/* @var $oSocial \CSocial */
@@ -40,7 +37,11 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 	{
 		parent::Init();
 		
+		$this->AddJsFile('js/include.js');
+
 		$this->AddCssFile('css/style.css');
+		
+		$this->IncludeTemplate('Settings_ServicesSettingsViewModel', 'ServicesSettings-Before-Buttons', 'templates/index.html');
 
 		$this->AddHook('filestorage.get-external-storages', 'GetExternalStorage');
 		$this->AddHook('filestorage.file-exists', 'FileExists');
@@ -62,7 +63,11 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 		{
 			/* @var $oApiSocial \CApiSocialManager */
 			$oApiSocial = \CApi::Manager('social');
-			$this->oSocial = $oApiSocial->GetSocial($oAccount->IdAccount, \ESocialType::Google);
+			$mResult = $oApiSocial->GetSocial($oAccount->IdAccount, self::StorageTypeStr);
+			if ($mResult !== null && $mResult->IssetScope('filestorage'))
+			{
+				$this->oSocial = $mResult;
+			}
 		}
 		return $this->oSocial;
 	}
@@ -83,10 +88,10 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 		return $bResult;
 	}
 	
-	protected function GetClient($oAccount, $iType)
+	protected function GetClient($oAccount, $sType)
 	{
 		$mResult = false;
-		if ($iType === self::StorageType)
+		if ($sType === self::StorageTypeStr)
 		{
 			/* @var $oTenant \CTenant */
 			$oTenant = null;
@@ -99,11 +104,19 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 			
 			/* @var $oSocial \CSocial */
 			$oSocial = $this->GetSocial($oAccount);
-			if ($oSocial && $oTenant && $oTenant->SocialGoogleAllow)
+			
+			$oTenantSocial = null;
+			if ($oTenant)
+			{
+				/* @var $oTenantSocial \CSocial */
+				$oTenantSocial = $oTenant->GetSocialByName('google');
+			}
+
+			if ($oSocial && $oTenantSocial && $oTenantSocial->SocialAllow && $oTenantSocial->IssetScope('filestorage'))
 			{
 				$oClient = new Google_Client();
-				$oClient->setClientId($oTenant->SocialGoogleId);
-				$oClient->setClientSecret($oTenant->SocialGoogleSecret);
+				$oClient->setClientId($oTenantSocial->SocialId);
+				$oClient->setClientSecret($oTenantSocial->SocialSecret);
 				$oClient->addScope('https://www.googleapis.com/auth/userinfo.email');
 				$oClient->addScope('https://www.googleapis.com/auth/userinfo.profile');
 				$oClient->addScope("https://www.googleapis.com/auth/drive");
@@ -124,7 +137,7 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 				}				
 				if ($oClient->getAccessToken())
 				{
-						$mResult = $oClient;
+					$mResult = $oClient;
 				}
 			}
 		}
@@ -137,15 +150,15 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 		if ($this->GetSocial($oAccount))
 		{
 			$aResult[] = array(
-				'Type' => self::StorageType,
+				'Type' => self::StorageTypeStr,
 				'DisplayName' => self::DisplayName
 			);
 		}
 	}	
 	
-	public function FileExists($oAccount, $iType, $sPath, $sName, &$bResult, &$bBreak)
+	public function FileExists($oAccount, $sType, $sPath, $sName, &$bResult, &$bBreak)
 	{
-		$oClient = $this->GetClient($oAccount, $iType);
+		$oClient = $this->GetClient($oAccount, $sType);
 		if ($oClient)
 		{
 			$bBreak = true;
@@ -155,14 +168,14 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 	/**
 	 * @param array $aData
 	 */
-	protected function PopulateFileInfo($iType, $sPath, $oFile)
+	protected function PopulateFileInfo($sType, $sPath, $oFile)
 	{
 		$bResult = false;
 		if ($oFile)
 		{
 			$bResult /*@var $bResult \CFileStorageItem */ = new  \CFileStorageItem();
 			$bResult->IsExternal = true;
-			$bResult->Type = $iType;
+			$bResult->TypeStr = $sType;
 			$bResult->IsFolder = ($oFile->mimeType === "application/vnd.google-apps.folder");
 			$bResult->Id = $oFile->id;
 			$bResult->Name = $oFile->title;
@@ -173,7 +186,7 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 //				$oItem->Owner = $oSocial->Name;
 			$bResult->LastModified = date_timestamp_get(date_create($oFile->createdDate));
 			$bResult->Hash = \CApi::EncodeKeyValues(array(
-				'Type' => $iType,
+				'Type' => $sType,
 				'Path' => $sPath,
 				'Name' => $bResult->Id,
 				'Size' => $bResult->Size
@@ -186,22 +199,22 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 	/**
 	 * @param \CAccount $oAccount
 	 */
-	public function GetFileInfo($oAccount, $iType, $sPath, $sName, &$bResult, &$bBreak)
+	public function GetFileInfo($oAccount, $sType, $sPath, $sName, &$bResult, &$bBreak)
 	{
-		$oClient = $this->GetClient($oAccount, $iType);
+		$oClient = $this->GetClient($oAccount, $sType);
 		if ($oClient)
 		{
 			$bBreak = true;
 			$bResult = false;
 			$oDrive = new Google_Service_Drive($oClient);
 			$oFile = $oDrive->files->get($sName);
-			$bResult = $this->PopulateFileInfo($iType, $sPath, $oFile);
+			$bResult = $this->PopulateFileInfo($sType, $sPath, $oFile);
 		}
 	}	
 
-	public function GetFile($oAccount, $iType, $sPath, $sName, &$bResult, &$bBreak)
+	public function GetFile($oAccount, $sType, $sPath, $sName, &$bResult, &$bBreak)
 	{
-		$oClient = $this->GetClient($oAccount, $iType);
+		$oClient = $this->GetClient($oAccount, $sType);
 		if ($oClient)
 		{
 			$bResult = false;
@@ -223,9 +236,9 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 		}
 	}	
 	
-	public function GetFiles($oAccount, $iType, $sPath, $sPattern, &$bResult, &$bBreak)
+	public function GetFiles($oAccount, $sType, $sPath, $sPattern, &$bResult, &$bBreak)
 	{
-		$oClient = $this->GetClient($oAccount, $iType);
+		$oClient = $this->GetClient($oAccount, $sType);
 		if ($oClient)
 		{
 			$bResult = array();
@@ -270,7 +283,7 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 			
 			foreach($aFileItems as $oChild) 
 			{
-				$oItem /*@var $oItem \CFileStorageItem */ = $this->PopulateFileInfo($iType, $sPath, $oChild);
+				$oItem /*@var $oItem \CFileStorageItem */ = $this->PopulateFileInfo($sType, $sPath, $oChild);
 				if ($oItem)
 				{
 					$bResult[] = $oItem;
@@ -279,9 +292,9 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 		}
 	}	
 
-	public function CreateFolder($oAccount, $iType, $sPath, $sFolderName, &$bResult, &$bBreak)
+	public function CreateFolder($oAccount, $sType, $sPath, $sFolderName, &$bResult, &$bBreak)
 	{
-		$oClient = $this->GetClient($oAccount, $iType);
+		$oClient = $this->GetClient($oAccount, $sType);
 		if ($oClient)
 		{
 			$bResult = false;
@@ -312,9 +325,9 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 		}
 	}	
 
-	public function CreateFile($oAccount, $iType, $sPath, $sFileName, $mData, &$bResult, &$bBreak)
+	public function CreateFile($oAccount, $sType, $sPath, $sFileName, $mData, &$bResult, &$bBreak)
 	{
-		$oClient = $this->GetClient($oAccount, $iType);
+		$oClient = $this->GetClient($oAccount, $sType);
 		if ($oClient)
 		{
 			$bResult = false;
@@ -361,18 +374,18 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 		}
 	}	
 
-	public function CreatePublicLink($oAccount, $iType, $sPath, $sName, &$bResult, &$bBreak)
+	public function CreatePublicLink($oAccount, $sType, $sPath, $sName, &$bResult, &$bBreak)
 	{
-		$oClient = $this->GetClient($oAccount, $iType);
+		$oClient = $this->GetClient($oAccount, $sType);
 		if ($oClient)
 		{
 			$bBreak = true;
 		}
 	}	
 
-	public function Delete($oAccount, $iType, $sPath, $sName, &$bResult, &$bBreak)
+	public function Delete($oAccount, $sType, $sPath, $sName, &$bResult, &$bBreak)
 	{
-		$oClient = $this->GetClient($oAccount, $iType);
+		$oClient = $this->GetClient($oAccount, $sType);
 		if ($oClient)
 		{
 			$bResult = false;
@@ -391,9 +404,9 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 		}
 	}	
 
-	public function Rename($oAccount, $iType, $sPath, $sName, $sNewName, &$bResult, &$bBreak)
+	public function Rename($oAccount, $sType, $sPath, $sName, $sNewName, &$bResult, &$bBreak)
 	{
-		$oClient = $this->GetClient($oAccount, $iType);
+		$oClient = $this->GetClient($oAccount, $sType);
 		if ($oClient)
 		{
 			$bResult = false;
@@ -419,9 +432,9 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 		}
 	}	
 
-	public function Move($oAccount, $iFromType, $iToType, $sFromPath, $sToPath, $sName, $sNewName, &$bResult, &$bBreak)
+	public function Move($oAccount, $sFromType, $sToType, $sFromPath, $sToPath, $sName, $sNewName, &$bResult, &$bBreak)
 	{
-		$oClient = $this->GetClient($oAccount, $iFromType);
+		$oClient = $this->GetClient($oAccount, $sFromType);
 		if ($oClient)
 		{
 			$bResult = false;
@@ -452,9 +465,9 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
         }
         	
 
-	public function Copy($oAccount, $iFromType, $iToType, $sFromPath, $sToPath, $sName, $sNewName, &$bResult, &$bBreak)
+	public function Copy($oAccount, $sFromType, $sToType, $sFromPath, $sToPath, $sName, $sNewName, &$bResult, &$bBreak)
 	{
-		$oClient = $this->GetClient($oAccount, $iFromType);
+		$oClient = $this->GetClient($oAccount, $sFromType);
 		if ($oClient)
 		{
 			$bResult = false;
