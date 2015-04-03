@@ -1,7 +1,5 @@
 <?php
 
-/* -AFTERLOGIC LICENSE HEADER- */
-
 class_exists('CApi') or die();
 
 set_include_path(__DIR__."/libs/" . PATH_SEPARATOR . get_include_path());
@@ -37,12 +35,8 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 	{
 		parent::Init();
 		
-		$this->AddJsFile('js/include.js');
-
 		$this->AddCssFile('css/style.css');
 		
-		$this->IncludeTemplate('Settings_ServicesSettingsViewModel', 'ServicesSettings-Before-Buttons', 'templates/index.html');
-
 		$this->AddHook('filestorage.get-external-storages', 'GetExternalStorage');
 		$this->AddHook('filestorage.file-exists', 'FileExists');
 		$this->AddHook('filestorage.get-file-info', 'GetFileInfo');
