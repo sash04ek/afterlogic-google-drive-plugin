@@ -58,7 +58,7 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 			/* @var $oApiSocial \CApiSocialManager */
 			$oApiSocial = \CApi::Manager('social');
 			$mResult = $oApiSocial->GetSocial($oAccount->IdAccount, self::StorageTypeStr);
-			if ($mResult !== null && $mResult->IssetScope('filestorage'))
+			if ($mResult !== null && $mResult->IssetScope('filestorage') && !$mResult->Disabled)
 			{
 				$this->oSocial = $mResult;
 			}
@@ -164,30 +164,31 @@ class CFilestorageGoogleDrivePlugin extends AApiPlugin
 	 */
 	protected function PopulateFileInfo($sType, $sPath, $oFile)
 	{
-		$bResult = false;
+		$mResult = false;
 		if ($oFile)
 		{
-			$bResult /*@var $bResult \CFileStorageItem */ = new  \CFileStorageItem();
-			$bResult->IsExternal = true;
-			$bResult->TypeStr = $sType;
-			$bResult->IsFolder = ($oFile->mimeType === "application/vnd.google-apps.folder");
-			$bResult->Id = $oFile->id;
-			$bResult->Name = $oFile->title;
-			$bResult->Path = '';
-			$bResult->Size = $oFile->fileSize;
-			$bResult->FullPath = $oFile->id;
+			\api_Utils::PopulateGoogleDriveFileInfo($oFile);
+			$mResult /*@var $mResult \CFileStorageItem */ = new  \CFileStorageItem();
+			$mResult->IsExternal = true;
+			$mResult->TypeStr = $sType;
+			$mResult->IsFolder = ($oFile->mimeType === "application/vnd.google-apps.folder");
+			$mResult->Id = $oFile->id;
+			$mResult->Name = $oFile->title;
+			$mResult->Path = '';
+			$mResult->Size = $oFile->fileSize;
+			$mResult->FullPath = $oFile->id;
 
 //				$oItem->Owner = $oSocial->Name;
-			$bResult->LastModified = date_timestamp_get(date_create($oFile->createdDate));
-			$bResult->Hash = \CApi::EncodeKeyValues(array(
+			$mResult->LastModified = date_timestamp_get(date_create($oFile->createdDate));
+			$mResult->Hash = \CApi::EncodeKeyValues(array(
 				'Type' => $sType,
 				'Path' => $sPath,
-				'Name' => $bResult->Id,
-				'Size' => $bResult->Size
+				'Name' => $mResult->Id,
+				'Size' => $mResult->Size
 			));
 		}
 
-		return $bResult;
+		return $mResult;
 	}	
 	
 	/**
